@@ -1,5 +1,7 @@
-RULE 1: Always read PLANNING.md before implementing new features.
-RULE 2: Never write code files > 500 LOC in one AI prompt.
-RULE 3: Each AI-generated feature must include tests.
-RULE 4: Secrets must not be hardcoded in any codebase.
-RULE 5: Always write a commit after each completed task.
+RULE 1: Always read PLANNING.md before writing code.
+RULE 2: Never write more than 500 LOC per file.
+RULE 3: Each feature must be tested using Playwright or Jest.
+RULE 4: Secrets must not be hardcoded in code files.
+RULE 5: Always update TASK.md after completing a task.
+RULE 6: Follow Next.js 14 App Router structure.
+RULE 7: Store integration must securely use Firebase + Firestore.

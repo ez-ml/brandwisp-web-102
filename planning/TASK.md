@@ -1,8 +1,15 @@
-# ✅ Dev Task Tracker
+# ✅ MCP Task Tracker – Brandwisp
 
-- [ ] Firebase Auth Integration
-- [ ] Shopify OAuth Connection
-- [ ] Dashboard Layout
-- [ ] Product Sync to BigQuery
-- [ ] Campaign UI and Flow
-- [ ] Role-based Access Control
+## Completed
+- [x] Firebase Auth: Login, Register, Role Middleware
+- [x] Protected Dashboard Page (/dashboard)
+
+## In Progress
+- [ ] Shopify Store Connect Page (/connect-store)
+- [ ] Shopify OAuth Callback Handler (/api/oauth/shopify)
+- [ ] Firestore Store Model: id, domain, status, tokens
+
+## Next
+- [ ] Reconnect Store Flow
+- [ ] Disconnect Handler
+- [ ] Store Connection Status UI in Dashboard

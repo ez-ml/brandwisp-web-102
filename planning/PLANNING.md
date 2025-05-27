@@ -1,11 +1,26 @@
-# 🧠 Project Vision: Brandwisp Portal
+# Brandwisp Portal – Project Planning
 
-Build an AI-powered Shopify campaign platform for merchants, using Firebase (Auth, Firestore) and BigQuery (analytics).
-Leverage MCP (Model Context Protocol) for AI-assisted development and testing.
+This is an AI-powered Shopify merchant platform to manage campaigns, analyze product performance, and connect stores.
 
-## Initial Features
-- Shopify store integration
-- Product sync to BigQuery
-- Campaign creation & management
-- User onboarding & billing
-- CTR / CVR performance dashboard
+## Architecture
+
+- **Frontend**: Next.js 14 (App Router)
+- **Auth**: Firebase Authentication (email + Google login)
+- **Data**: Firestore (users, stores), BigQuery (products, events)
+- **Hosting**: Vercel
+- **AI Coding Workflow**: MCP (Model Context Protocol)
+
+## Modules
+
+- ✅ Auth (Login/Register/Role middleware)
+- 🟡 Shopify Store Connect/Disconnect/Reconnect
+- ⬜ Campaign Builder
+- ⬜ Product Performance Dashboard
+- ⬜ Subscription Billing
+
+## Shopify Integration
+
+- OAuth with Shopify
+- Store tokens stored in Firestore
+- Support reconnect (create new token record)
+- Webhook support (HMAC validation)

@@ -1,0 +1,16 @@
+[app]
+title = "BrandWisp"
+application_url = "https://https://c502-2601-646-8002-5010-fdc2-9f41-4d27-3974.ngrok-free.app"  # e.g. https://abcd.ngrok.app
+embedded = true
+
+[access_scopes]
+scopes = "read_products,write_products,read_content,write_content"
+
+[auth]
+redirect_urls = ["https://c502-2601-646-8002-5010-fdc2-9f41-4d27-3974.ngrok-free.app/api/shopify/callback"]
+
+[webhooks]
+api_version = "2024-04"
+
+[cli]
+store = "ss-armatics.myshopify.com"

@@ -1,0 +1,9 @@
+{
+  "models": {
+    "openai": {
+      "provider": "openai",
+      "apiKey": "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",
+    }
+  },
+  "defaultModel": "openai:gpt-4"
+}

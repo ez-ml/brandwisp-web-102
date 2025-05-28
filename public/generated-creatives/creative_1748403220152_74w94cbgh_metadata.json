@@ -1,0 +1,18 @@
+{
+  "id": "creative_1748403220152_74w94cbgh",
+  "headline": "Premium Product Showcase",
+  "description": "Experience the ultimate in quality and design with our premium product line",
+  "callToAction": "Shop Now",
+  "brandName": "Premium Brand",
+  "platform": "instagram",
+  "template": "product-showcase",
+  "duration": 30,
+  "createdAt": "2025-05-28T03:33:58.600Z",
+  "specifications": {
+    "width": 1080,
+    "height": 1080,
+    "fps": 30,
+    "format": "mp4",
+    "quality": "high"
+  }
+}

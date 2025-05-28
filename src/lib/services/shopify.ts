@@ -328,13 +328,27 @@ export class ShopifyService {
     console.log(`Starting sync for store ${storeId}`);
     
     try {
+      // Verify store exists and has access token
+      console.log(`Getting store details for ${storeId}`);
+      const store = await StoreModel.getById(storeId);
+      if (!store) {
+        throw new Error(`Store ${storeId} not found`);
+      }
+      if (!store.accessToken) {
+        throw new Error(`Store ${storeId} has no access token`);
+      }
+      console.log(`Store found: ${store.storeName} (${store.storeUrl})`);
+      
       // Sync products
+      console.log(`Starting product sync for store ${storeId}`);
       await this.syncProducts(storeId);
       
-      // Sync orders
-      await this.syncOrders(storeId);
+      // Skip orders sync for now due to protected customer data restrictions
+      console.log(`Skipping order sync for store ${storeId} (requires app approval for protected customer data)`);
+      // await this.syncOrders(storeId);
       
       // Update last sync time
+      console.log(`Updating last sync time for store ${storeId}`);
       await StoreModel.updateLastSync(storeId);
       
       console.log(`Sync completed for store ${storeId}`);
@@ -345,30 +359,67 @@ export class ShopifyService {
   }
 
   private static async syncProducts(storeId: string): Promise<void> {
-    const products = await this.getProducts(storeId);
+    console.log(`Fetching products for store ${storeId}`);
     
-    for (const product of products) {
-      // Transform Shopify product to our format
-      const transformedProduct = this.transformProduct(product, storeId);
-      
-      // Save to Firebase
-      await FirebaseService.saveProduct(storeId, transformedProduct);
-      
-      // Send to BigQuery for analytics
-      await BigQueryService.insertProductEvent({
-        event_id: `sync_${product.id}_${Date.now()}`,
-        store_id: storeId,
-        product_id: product.id,
-        event_type: 'sync',
-        timestamp: new Date().toISOString(),
-        metadata: {
-          title: product.title,
-          vendor: product.vendor,
-          product_type: product.product_type,
-          status: product.status,
-        }
-      });
+    // First, test the connection with a simple shop info call
+    const store = await StoreModel.getById(storeId);
+    if (!store) throw new Error('Store not found');
+    
+    try {
+      console.log(`Testing API connection for store ${store.storeUrl}`);
+      const shopInfo = await this.makeRequest(
+        store.storeUrl,
+        store.accessToken!,
+        'shop.json'
+      );
+      console.log(`Shop info retrieved: ${shopInfo.shop.name}`);
+    } catch (shopError) {
+      console.error('Failed to get shop info:', shopError);
+      const errorMessage = shopError instanceof Error ? shopError.message : 'Unknown error';
+      throw new Error(`API connection failed: ${errorMessage}`);
     }
+    
+    const products = await this.getProducts(storeId);
+    console.log(`Found ${products.length} products to sync`);
+    
+    for (let i = 0; i < products.length; i++) {
+      const product = products[i];
+      console.log(`Syncing product ${i + 1}/${products.length}: ${product.title} (ID: ${product.id})`);
+      
+      try {
+        // Transform Shopify product to our format
+        const transformedProduct = this.transformProduct(product, storeId);
+        console.log(`Transformed product ${product.id}`);
+        
+        // Save to Firebase
+        await FirebaseService.saveProduct(storeId, transformedProduct);
+        console.log(`Saved product ${product.id} to Firebase`);
+        
+        // Send to BigQuery for analytics (temporarily disabled for debugging)
+        try {
+          await BigQueryService.insertProductEvent({
+            event_id: `sync_${product.id}_${Date.now()}`,
+            store_id: storeId,
+            product_id: product.id,
+            event_type: 'sync',
+            timestamp: new Date().toISOString(),
+            metadata: {
+              title: product.title,
+              vendor: product.vendor,
+              product_type: product.product_type,
+              status: product.status,
+            }
+          });
+          console.log(`Sent product ${product.id} event to BigQuery`);
+        } catch (bigQueryError) {
+          console.warn(`BigQuery insert failed for product ${product.id}, continuing sync:`, bigQueryError);
+        }
+      } catch (productError) {
+        console.error(`Error syncing product ${product.id}:`, productError);
+        throw productError; // Re-throw to stop sync on product error
+      }
+    }
+    console.log(`Completed syncing ${products.length} products`);
   }
 
   private static async syncOrders(storeId: string): Promise<void> {
@@ -377,51 +428,55 @@ export class ShopifyService {
     for (const order of orders) {
       // Process each line item as a product event
       for (const lineItem of order.line_items) {
-        await BigQueryService.insertProductEvent({
-          event_id: `order_${order.id}_${lineItem.id}`,
-          user_id: order.customer?.id?.toString(),
-          session_id: order.checkout_token,
-          store_id: storeId,
-          product_id: lineItem.product_id.toString(),
-          variant_id: lineItem.variant_id?.toString(),
-          event_type: 'purchase',
-          timestamp: order.created_at,
-          quantity: lineItem.quantity,
-          price: parseFloat(lineItem.price),
-          currency: order.currency,
-          discount_amount: parseFloat(order.total_discounts),
-          country: order.shipping_address?.country,
-        });
+        try {
+          await BigQueryService.insertProductEvent({
+            event_id: `order_${order.id}_${lineItem.id}`,
+            user_id: order.customer?.id?.toString(),
+            session_id: order.checkout_token,
+            store_id: storeId,
+            product_id: lineItem.product_id.toString(),
+            variant_id: lineItem.variant_id?.toString(),
+            event_type: 'purchase',
+            timestamp: order.created_at,
+            quantity: lineItem.quantity,
+            price: parseFloat(lineItem.price),
+            currency: order.currency,
+            discount_amount: parseFloat(order.total_discounts),
+            country: order.shipping_address?.country,
+          });
+        } catch (bigQueryError) {
+          console.warn('BigQuery insert failed for order, continuing sync:', bigQueryError);
+        }
       }
     }
   }
 
   static transformProduct(shopifyProduct: ShopifyProduct, storeId: string) {
     return {
-      id: shopifyProduct.id,
+      id: shopifyProduct.id.toString(), // Ensure ID is a string
       storeId,
-      title: shopifyProduct.title,
-      description: shopifyProduct.body_html,
-      vendor: shopifyProduct.vendor,
-      productType: shopifyProduct.product_type,
-      status: shopifyProduct.status,
-      tags: shopifyProduct.tags.split(',').map(tag => tag.trim()).filter(Boolean),
-      images: shopifyProduct.images.map(img => ({
-        id: img.id,
-        src: img.src,
-        altText: img.alt,
-        width: img.width,
-        height: img.height,
-        position: img.position,
-      })),
-      variants: shopifyProduct.variants.map(variant => ({
-        id: variant.id,
-        title: variant.title,
-        price: parseFloat(variant.price),
-        compareAtPrice: variant.compare_at_price ? parseFloat(variant.compare_at_price) : undefined,
-        sku: variant.sku,
-        inventory: variant.inventory_quantity,
-      })),
+      title: shopifyProduct.title || '',
+      description: shopifyProduct.body_html || '',
+      vendor: shopifyProduct.vendor || '',
+      productType: shopifyProduct.product_type || '',
+      status: shopifyProduct.status || 'draft',
+      tags: shopifyProduct.tags ? shopifyProduct.tags.split(',').map(tag => tag.trim()).filter(Boolean) : [],
+      images: shopifyProduct.images ? shopifyProduct.images.map(img => ({
+        id: img.id.toString(),
+        src: img.src || '',
+        altText: img.alt || '',
+        width: img.width || 0,
+        height: img.height || 0,
+        position: img.position || 0,
+      })) : [],
+      variants: shopifyProduct.variants ? shopifyProduct.variants.map(variant => ({
+        id: variant.id.toString(),
+        title: variant.title || '',
+        price: parseFloat(variant.price) || 0,
+        compareAtPrice: variant.compare_at_price ? parseFloat(variant.compare_at_price) : null,
+        sku: variant.sku || '',
+        inventory: variant.inventory_quantity || 0,
+      })) : [],
       createdAt: new Date(shopifyProduct.created_at),
       updatedAt: new Date(shopifyProduct.updated_at),
     };

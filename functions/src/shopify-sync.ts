@@ -1,11 +1,12 @@
-import { onSchedule } from 'firebase-functions/v2/scheduler';
-import { onDocumentWritten } from 'firebase-functions/v2/firestore';
+import * as functions from 'firebase-functions';
 import { ShopifyService } from './services/shopify';
 import { BigQueryService } from './services/bigquery';
 import { StoreModel } from './models/store';
+import { FirebaseService } from './services/firebase';
+import * as crypto from 'crypto';
 
 // Scheduled sync every hour
-export const scheduledShopifySync = onSchedule('0 * * * *', async (event) => {
+export const scheduledShopifySync = functions.pubsub.schedule('0 * * * *').onRun(async (context) => {
   console.log('Starting scheduled Shopify sync');
   
   try {
@@ -29,33 +30,32 @@ export const scheduledShopifySync = onSchedule('0 * * * *', async (event) => {
 });
 
 // Real-time sync on store connection
-export const onStoreConnected = onDocumentWritten(
-  'stores/{storeId}',
-  async (event) => {
-    const storeData = event.data?.after?.data();
+export const onStoreConnected = functions.firestore
+  .document('stores/{storeId}')
+  .onWrite(async (change, context) => {
+    const storeData = change.after.data();
     
     if (storeData?.status === 'connected' && storeData?.provider === 'shopify') {
       console.log(`New store connected: ${storeData.storeName}`);
       
       try {
         // Initial sync
-        await ShopifyService.syncStoreData(event.params.storeId);
+        await ShopifyService.syncStoreData(context.params.storeId);
         console.log(`Initial sync completed for: ${storeData.storeName}`);
       } catch (error) {
         console.error(`Initial sync failed for ${storeData.storeName}:`, error);
       }
     }
-  }
-);
+  });
 
 // Process webhook events
-export const processShopifyWebhook = onRequest(async (req, res) => {
+export const processShopifyWebhook = functions.https.onRequest(async (req, res) => {
   const topic = req.headers['x-shopify-topic'];
   const shop = req.headers['x-shopify-shop-domain'];
   const hmac = req.headers['x-shopify-hmac-sha256'];
   
   // Verify webhook authenticity
-  if (!verifyWebhook(req.body, hmac)) {
+  if (!verifyWebhook(req.body, hmac as string)) {
     res.status(401).send('Unauthorized');
     return;
   }
@@ -64,16 +64,16 @@ export const processShopifyWebhook = onRequest(async (req, res) => {
     switch (topic) {
       case 'products/create':
       case 'products/update':
-        await handleProductUpdate(shop, req.body);
+        await handleProductUpdate(shop as string, req.body);
         break;
         
       case 'orders/create':
       case 'orders/updated':
-        await handleOrderUpdate(shop, req.body);
+        await handleOrderUpdate(shop as string, req.body);
         break;
         
       case 'app/uninstalled':
-        await handleAppUninstall(shop);
+        await handleAppUninstall(shop as string);
         break;
     }
     
@@ -83,6 +83,39 @@ export const processShopifyWebhook = onRequest(async (req, res) => {
     res.status(500).send('Internal Server Error');
   }
 });
+
+function verifyWebhook(body: any, hmac: string): boolean {
+  const webhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    console.error('SHOPIFY_WEBHOOK_SECRET not configured');
+    return false;
+  }
+
+  const calculatedHmac = crypto
+    .createHmac('sha256', webhookSecret)
+    .update(JSON.stringify(body))
+    .digest('base64');
+
+  return crypto.timingSafeEqual(
+    Buffer.from(calculatedHmac),
+    Buffer.from(hmac)
+  );
+}
+
+async function handleAppUninstall(shop: string): Promise<void> {
+  console.log(`App uninstalled for shop: ${shop}`);
+  
+  try {
+    const store = await StoreModel.getByDomain(shop);
+    if (store) {
+      // Update store status to disconnected
+      await FirebaseService.updateStoreLastSync(store.id);
+      console.log(`Store ${shop} marked as disconnected`);
+    }
+  } catch (error) {
+    console.error(`Error handling app uninstall for ${shop}:`, error);
+  }
+}
 
 async function handleProductUpdate(shop: string, product: any) {
   const store = await StoreModel.getByDomain(shop);

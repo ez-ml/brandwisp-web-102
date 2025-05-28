@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
       userId = decodedToken.uid;
     } catch (authError) {
       // For development, allow a test user if Firebase is not configured
-      if (process.env.NODE_ENV === 'development' && token === 'test') {
+      if (process.env.NODE_ENV === 'development' && token === 'test-token') {
         userId = 'test-user-id';
       } else {
         console.error('Auth error:', authError);

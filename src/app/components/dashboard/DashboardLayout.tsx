@@ -15,7 +15,7 @@ import {
   User
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/context/AuthContext';
 import { useState } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
@@ -34,7 +34,6 @@ const navItems: NavItem[] = [
   { icon: Glasses, href: '/dashboard/visiontagger', title: 'Vision Tagger' },
   { icon: Route, href: '/dashboard/traffictrace', title: 'Traffic Trace' },
   { icon: MonitorPlay, href: '/dashboard/campaignwizard', title: 'Campaign Wizard' },
-  { icon: Store, href: '/dashboard/stores', title: 'Stores' },
   { icon: Settings, href: '/dashboard/settings', title: 'Settings' },
 ];
 
@@ -99,7 +98,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                       Settings
                     </Link>
                     <Link
-                      href="/pages/plan"
+                      href="/plans"
                       className="block w-full text-left px-4 py-2 hover:bg-[#2a245e] text-sm"
                     >
                       Plans

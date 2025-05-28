@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/dashboard/DashboardLayout';
 import { Card } from '@/components/ui/card';
@@ -91,12 +91,54 @@ export default function SettingsPage() {
   const loadStores = async () => {
     if (!user) return;
     try {
+      // Check if we're in development mode with a mock user
+      const isDevelopmentMode = user.uid?.startsWith('dev-user-') || process.env.NODE_ENV === 'development';
+      
+      if (isDevelopmentMode) {
+        // Provide mock stores for development
+        const mockStores: StoreConnection[] = [
+          {
+            id: 'mock-store-1',
+            userId: user.uid || 'dev-user',
+            storeName: 'BrandWisp Demo Store',
+            provider: 'shopify' as StoreProvider,
+            storeUrl: 'brandwisp-demo.myshopify.com',
+            status: 'connected' as const,
+            accessToken: 'mock_access_token_1',
+            createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 7 days ago
+            updatedAt: new Date(),
+          },
+          {
+            id: 'mock-store-2',
+            userId: user.uid || 'dev-user',
+            storeName: 'Creative Designs Shop',
+            provider: 'shopify' as StoreProvider,
+            storeUrl: 'creative-designs.myshopify.com',
+            status: 'connected' as const,
+            accessToken: 'mock_access_token_2',
+            createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000), // 14 days ago
+            updatedAt: new Date(),
+          }
+        ];
+        console.log('Development mode: Using mock stores', mockStores);
+        setStores(mockStores);
+        return;
+      }
+
+      // Production mode: use real Firebase
       const userStores = await StoreModel.getByUserId(user.uid);
-      console.log('Loaded stores:', userStores); // Add logging
+      console.log('Loaded stores:', userStores);
       setStores(userStores);
     } catch (err) {
       console.error('Error loading stores:', err);
-      setError('Failed to load stores');
+      // In development mode, provide empty stores instead of error
+      const isDevelopmentMode = user.uid?.startsWith('dev-user-') || process.env.NODE_ENV === 'development';
+      if (isDevelopmentMode) {
+        console.log('Development mode: Firebase error, using empty stores');
+        setStores([]);
+      } else {
+        setError('Failed to load stores');
+      }
     }
   };
 
@@ -106,7 +148,40 @@ export default function SettingsPage() {
     setIsConnecting(true);
 
     try {
-      // Validate the store connection
+      // Check if we're in development mode
+      const isDevelopmentMode = user.uid?.startsWith('dev-user-') || process.env.NODE_ENV === 'development';
+      
+      if (isDevelopmentMode) {
+        // Mock store connection for development
+        console.log('Development mode: Mock store connection');
+        
+        // Simulate connection delay
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Create a mock store
+        const mockStore: StoreConnection = {
+          id: 'mock-store-' + Date.now(),
+          userId: user.uid || 'dev-user',
+          storeName: `${storeDomain} (Demo)`,
+          provider: selectedProvider,
+          storeUrl: selectedProvider === 'shopify' ? 
+            (storeDomain.includes('.myshopify.com') ? storeDomain : `${storeDomain}.myshopify.com`) : 
+            storeDomain,
+          status: 'connected' as const,
+          accessToken: `mock_access_token_${Date.now()}`,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        
+        // Add to existing stores
+        setStores(prev => [...prev, mockStore]);
+        setModalOpen(false);
+        setStoreDomain('');
+        setIsConnecting(false);
+        return;
+      }
+
+      // Production mode: validate the store connection
       await StoreModel.validateNewConnection(user.uid, selectedProvider, storeDomain);
 
       // Initiate OAuth flow based on provider
@@ -146,6 +221,20 @@ export default function SettingsPage() {
 
   const handleDisconnect = async (storeId: string) => {
     try {
+      // Check if we're in development mode
+      const isDevelopmentMode = user?.uid?.startsWith('dev-user-') || process.env.NODE_ENV === 'development';
+      
+      if (isDevelopmentMode) {
+        // Mock store disconnection for development
+        console.log('Development mode: Mock store disconnection');
+        
+        // Remove store from local state
+        setStores(prev => prev.filter(store => store.id !== storeId));
+        setError(null);
+        return;
+      }
+
+      // Production mode: use real API
       const response = await fetch('/api/stores/disconnect', {
         method: 'POST',
         headers: {

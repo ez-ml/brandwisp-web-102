@@ -1,4 +1,5 @@
 "use client";
+
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -29,12 +30,16 @@ export default function LoginForm() {
     setError('');
 
     try {
-      const { success, error } = await signInWithEmail(
+      const { success, error, user } = await signInWithEmail(
         formData.email,
         formData.password
       );
 
-      if (success) {
+      if (success && user) {
+        // Store mock user in localStorage for development mode
+        if (process.env.NODE_ENV === 'development') {
+          localStorage.setItem('mockUser', JSON.stringify(user));
+        }
         router.push('/dashboard');
       } else {
         setError(error || 'Invalid email or password');
@@ -57,9 +62,13 @@ export default function LoginForm() {
         shopify: signInWithShopify
       }[provider];
 
-      const { success, error } = await signInMethod();
+      const { success, error, user } = await signInMethod();
 
-      if (success) {
+      if (success && user) {
+        // Store mock user in localStorage for development mode
+        if (process.env.NODE_ENV === 'development') {
+          localStorage.setItem('mockUser', JSON.stringify(user));
+        }
         router.push('/dashboard');
       } else {
         setError(error || `Error signing in with ${provider}`);

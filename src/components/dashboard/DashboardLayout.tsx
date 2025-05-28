@@ -17,7 +17,7 @@ import {
   User
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/context/AuthContext';
 import { useState } from 'react';
 
 interface NavItem {
@@ -40,8 +40,23 @@ const navItems: NavItem[] = [
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  const handleLogout = async () => {
+    try {
+      logout();
+      setDropdownOpen(false);
+      router.push('/login');
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
+
+  // Close dropdown when clicking outside
+  const handleDropdownToggle = () => {
+    setDropdownOpen(!dropdownOpen);
+  };
 
   return (
     <div className="bg-[white] w-screen h-screen flex justify-center items-center">
@@ -69,33 +84,50 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </button>
               <div className="relative">
                 <button
-                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                  onClick={handleDropdownToggle}
                   className="bg-purple-600 px-4 py-2 rounded-full hover:bg-purple-700 text-white text-sm transition-all shadow-lg"
                 >
-                  {user?.displayName || user?.email}
+                  {user?.displayName || user?.email || 'User'}
                 </button>
 
                 {dropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-44 bg-[#1E1B4B] rounded-xl shadow-2xl z-50 text-white">
-                    <Link
-                      href="/dashboard"
-                      className="block w-full text-left px-4 py-2 hover:bg-[#2a245e] text-sm rounded-t-xl"
-                    >
-                      Dashboard
-                    </Link>
-                    <Link
-                      href="/dashboard/settings"
-                      className="block w-full text-left px-4 py-2 hover:bg-[#2a245e] text-sm"
-                    >
-                      Settings
-                    </Link>
-                    <Link
-                      href="/pages/plan"
-                      className="block w-full text-left px-4 py-2 hover:bg-[#2a245e] text-sm rounded-b-xl"
-                    >
-                      Plans
-                    </Link>
-                  </div>
+                  <>
+                    {/* Backdrop to close dropdown when clicking outside */}
+                    <div 
+                      className="fixed inset-0 z-40" 
+                      onClick={() => setDropdownOpen(false)}
+                    />
+                    <div className="absolute right-0 mt-2 w-44 bg-[#1E1B4B] rounded-xl shadow-2xl z-50 text-white border border-white/10">
+                      <Link
+                        href="/dashboard"
+                        className="block w-full text-left px-4 py-2 hover:bg-[#2a245e] text-sm rounded-t-xl transition-colors"
+                        onClick={() => setDropdownOpen(false)}
+                      >
+                        Dashboard
+                      </Link>
+                      <Link
+                        href="/dashboard/settings"
+                        className="block w-full text-left px-4 py-2 hover:bg-[#2a245e] text-sm transition-colors"
+                        onClick={() => setDropdownOpen(false)}
+                      >
+                        Settings
+                      </Link>
+                      <Link
+                        href="/pages/plan"
+                        className="block w-full text-left px-4 py-2 hover:bg-[#2a245e] text-sm transition-colors"
+                        onClick={() => setDropdownOpen(false)}
+                      >
+                        Plans
+                      </Link>
+                      <hr className="border-white/10 my-1" />
+                      <button
+                        onClick={handleLogout}
+                        className="block w-full text-left px-4 py-2 hover:bg-[#2a245e] text-sm text-red-400 hover:text-red-300 rounded-b-xl transition-colors"
+                      >
+                        Log Out
+                      </button>
+                    </div>
+                  </>
                 )}
               </div>
             </div>

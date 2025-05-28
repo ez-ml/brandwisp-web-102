@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/context/AuthContext';
 import { useProductPulseData, useDashboardMutation } from '@/hooks/useDashboardData';
+import { useRealStoreData } from '@/hooks/useRealStoreData';
 import DashboardLayout from '@/components/dashboard/DashboardLayout';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -33,6 +34,7 @@ import {
   Filter,
   Store,
 } from 'lucide-react';
+import RealStoreManager from '@/components/dashboard/RealStoreManager';
 import {
   ResponsiveContainer,
   LineChart,
@@ -144,10 +146,14 @@ export default function ProductPulsePage() {
   const [loading, setLoading] = useState(false);
   const [productId, setProductId] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [activeView, setActiveView] = useState<'overview' | 'details' | 'seo'>('overview');
+  const [activeView, setActiveView] = useState<'overview' | 'details' | 'seo' | 'stores'>('stores');
   const [showProductModal, setShowProductModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [storeFilter, setStoreFilter] = useState('all');
+  const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
+
+  // Real store data
+  const { stores, products: realProducts, loading: storesLoading, error: storesError } = useRealStoreData();
 
   // Fetch data from backend
   const { data: overviewData, loading: overviewLoading, error: overviewError, refetch: refetchOverview } = useProductPulseData(
@@ -160,14 +166,15 @@ export default function ProductPulsePage() {
     'products'
   );
 
-  // Filter products for the modal
-  const filteredProducts = productsData?.products?.filter((product: Product) => {
+  // Filter products for the modal - use real products if available, otherwise fallback to API data
+  const allProducts = realProducts.length > 0 ? realProducts : (productsData?.products || []);
+  const filteredProducts = allProducts.filter((product: Product) => {
     const matchesSearch = product.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          product.vendor.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          product.productType.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStore = storeFilter === 'all' || product.storeId === storeFilter;
     return matchesSearch && matchesStore;
-  }) || [];
+  });
 
   const handleAnalyze = async () => {
     if (!selectedProduct) {
@@ -210,15 +217,54 @@ export default function ProductPulsePage() {
     ? overviewData.metrics 
     : emptyMetrics;
 
-  const seoMetrics: SEOMetrics = selectedProduct && overviewData?.seoMetrics 
-    ? overviewData.seoMetrics 
-    : {
+  // Calculate real SEO metrics from selected product
+  const calculateSEOMetrics = (product: Product | null): SEOMetrics => {
+    if (!product) {
+      return {
         score: 0,
         titleOptimization: 0,
         keywordDensity: 0,
         altTextCoverage: 0,
         metaDescription: 0,
       };
+    }
+
+    // Title optimization (based on length and keywords)
+    const titleLength = product.title?.length || 0;
+    const titleOptimization = titleLength >= 30 && titleLength <= 60 ? 100 : 
+                             titleLength >= 20 && titleLength <= 80 ? 75 :
+                             titleLength >= 10 ? 50 : 25;
+
+    // Keyword density (based on tags and product type)
+    const keywordCount = product.tags?.length || 0;
+    const keywordDensity = keywordCount >= 5 ? 100 :
+                          keywordCount >= 3 ? 75 :
+                          keywordCount >= 1 ? 50 : 0;
+
+    // Alt text coverage (percentage of images with alt text)
+    const totalImages = product.images?.length || 0;
+    const imagesWithAlt = product.images?.filter(img => img.altText && img.altText.trim()).length || 0;
+    const altTextCoverage = totalImages > 0 ? Math.round((imagesWithAlt / totalImages) * 100) : 0;
+
+    // Meta description (based on description length and quality)
+    const descriptionLength = product.description?.length || 0;
+    const metaDescription = descriptionLength >= 120 && descriptionLength <= 160 ? 100 :
+                           descriptionLength >= 80 && descriptionLength <= 200 ? 75 :
+                           descriptionLength >= 50 ? 50 : 25;
+
+    // Overall score (average of all metrics)
+    const score = Math.round((titleOptimization + keywordDensity + altTextCoverage + metaDescription) / 4);
+
+    return {
+      score,
+      titleOptimization,
+      keywordDensity,
+      altTextCoverage,
+      metaDescription,
+    };
+  };
+
+  const seoMetrics: SEOMetrics = calculateSEOMetrics(selectedProduct);
 
   const reviews: ProductReview[] = selectedProduct && overviewData?.reviews 
     ? overviewData.reviews 
@@ -945,29 +991,112 @@ export default function ProductPulsePage() {
                 <h3 className="text-lg font-semibold text-white mb-4">Current SEO Data</h3>
                 <div className="space-y-4">
                   <div>
-                    <label className="text-sm text-gray-400">Title</label>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm text-gray-400">Title</label>
+                      <span className={`text-xs px-2 py-1 rounded ${
+                        seoMetrics.titleOptimization >= 75 ? 'bg-green-400/20 text-green-400' :
+                        seoMetrics.titleOptimization >= 50 ? 'bg-yellow-400/20 text-yellow-400' :
+                        'bg-red-400/20 text-red-400'
+                      }`}>
+                        {selectedProduct.title?.length || 0} chars
+                      </span>
+                    </div>
                     <p className="text-white bg-[#1E1B4B]/60 rounded-lg p-3 mt-1">
-                      {selectedProduct.seo?.title || selectedProduct.title}
+                      {selectedProduct.title || 'No title'}
                     </p>
+                    {selectedProduct.title && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        {selectedProduct.title.length < 30 ? 'Title too short (recommended: 30-60 chars)' :
+                         selectedProduct.title.length > 60 ? 'Title too long (recommended: 30-60 chars)' :
+                         'Title length is optimal'}
+                      </p>
+                    )}
                   </div>
+                  
                   <div>
-                    <label className="text-sm text-gray-400">Description</label>
-                    <p className="text-white bg-[#1E1B4B]/60 rounded-lg p-3 mt-1">
-                      {selectedProduct.seo?.description || selectedProduct.description}
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm text-gray-400">Description</label>
+                      <span className={`text-xs px-2 py-1 rounded ${
+                        seoMetrics.metaDescription >= 75 ? 'bg-green-400/20 text-green-400' :
+                        seoMetrics.metaDescription >= 50 ? 'bg-yellow-400/20 text-yellow-400' :
+                        'bg-red-400/20 text-red-400'
+                      }`}>
+                        {selectedProduct.description?.length || 0} chars
+                      </span>
+                    </div>
+                    <p className="text-white bg-[#1E1B4B]/60 rounded-lg p-3 mt-1 max-h-24 overflow-y-auto">
+                      {selectedProduct.description || 'No description'}
                     </p>
+                    {selectedProduct.description && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        {selectedProduct.description.length < 120 ? 'Description too short (recommended: 120-160 chars for meta)' :
+                         selectedProduct.description.length > 200 ? 'Description very long (consider shortening for meta)' :
+                         'Description length is good'}
+                      </p>
+                    )}
                   </div>
+                  
                   <div>
-                    <label className="text-sm text-gray-400">Keywords</label>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm text-gray-400">Tags/Keywords</label>
+                      <span className={`text-xs px-2 py-1 rounded ${
+                        seoMetrics.keywordDensity >= 75 ? 'bg-green-400/20 text-green-400' :
+                        seoMetrics.keywordDensity >= 50 ? 'bg-yellow-400/20 text-yellow-400' :
+                        'bg-red-400/20 text-red-400'
+                      }`}>
+                        {selectedProduct.tags?.length || 0} tags
+                      </span>
+                    </div>
                     <div className="flex flex-wrap gap-2 mt-2">
-                      {selectedProduct.seo?.keywords?.map((keyword, index) => (
+                      {selectedProduct.tags?.length > 0 ? selectedProduct.tags.map((tag, index) => (
                         <span
                           key={index}
                           className="bg-blue-600/20 text-blue-300 px-2 py-1 rounded text-sm border border-blue-400/30"
                         >
-                          {keyword}
+                          {tag}
                         </span>
-                      )) || <span className="text-gray-500">No keywords defined</span>}
+                      )) : <span className="text-gray-500">No tags defined</span>}
                     </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      {(selectedProduct.tags?.length || 0) < 3 ? 'Add more tags for better SEO (recommended: 3-5 tags)' :
+                       (selectedProduct.tags?.length || 0) > 8 ? 'Consider reducing tags to focus on most relevant ones' :
+                       'Good number of tags for SEO'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm text-gray-400">Image Alt Text Coverage</label>
+                      <span className={`text-xs px-2 py-1 rounded ${
+                        seoMetrics.altTextCoverage >= 75 ? 'bg-green-400/20 text-green-400' :
+                        seoMetrics.altTextCoverage >= 50 ? 'bg-yellow-400/20 text-yellow-400' :
+                        'bg-red-400/20 text-red-400'
+                      }`}>
+                        {selectedProduct.images?.filter(img => img.altText && img.altText.trim()).length || 0}/{selectedProduct.images?.length || 0}
+                      </span>
+                    </div>
+                    <div className="bg-[#1E1B4B]/60 rounded-lg p-3">
+                      {selectedProduct.images?.length > 0 ? (
+                        <div className="space-y-2">
+                          {selectedProduct.images.slice(0, 3).map((image, index) => (
+                            <div key={index} className="flex items-center justify-between text-sm">
+                              <span className="text-gray-400">Image {index + 1}:</span>
+                              <span className={image.altText && image.altText.trim() ? 'text-green-400' : 'text-red-400'}>
+                                {image.altText && image.altText.trim() ? '✓ Has alt text' : '✗ Missing alt text'}
+                              </span>
+                            </div>
+                          ))}
+                          {selectedProduct.images.length > 3 && (
+                            <p className="text-xs text-gray-500">+{selectedProduct.images.length - 3} more images</p>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-gray-500">No images found</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Alt text helps search engines understand your images and improves accessibility
+                    </p>
                   </div>
                 </div>
               </div>
@@ -994,6 +1123,90 @@ export default function ProductPulsePage() {
                   </ResponsiveContainer>
                 </div>
               </div>
+            </div>
+          </Card>
+
+          {/* SEO Recommendations */}
+          <Card className="bg-gradient-to-br from-[#2A2153]/90 to-[#2A2153]/70 border-[#3D3A6E] p-6 backdrop-blur-sm shadow-2xl">
+            <h2 className="text-xl font-semibold mb-6 text-purple-300 flex items-center">
+              <AlertTriangle className="h-5 w-5 mr-2" />
+              SEO Recommendations
+            </h2>
+            <div className="space-y-4">
+              {/* Title Recommendations */}
+              {seoMetrics.titleOptimization < 75 && (
+                <div className="bg-gradient-to-r from-yellow-600/20 to-orange-600/20 rounded-xl border border-yellow-400/30 p-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <AlertTriangle className="h-5 w-5 text-yellow-400" />
+                    <h3 className="font-semibold text-yellow-300">Title Optimization</h3>
+                  </div>
+                  <p className="text-gray-300 text-sm">
+                    {selectedProduct.title?.length < 30 
+                      ? 'Your title is too short. Consider adding more descriptive keywords to reach 30-60 characters.'
+                      : 'Your title is too long. Try to keep it under 60 characters for better search engine display.'
+                    }
+                  </p>
+                </div>
+              )}
+
+              {/* Keywords Recommendations */}
+              {seoMetrics.keywordDensity < 75 && (
+                <div className="bg-gradient-to-r from-blue-600/20 to-purple-600/20 rounded-xl border border-blue-400/30 p-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <Target className="h-5 w-5 text-blue-400" />
+                    <h3 className="font-semibold text-blue-300">Keywords & Tags</h3>
+                  </div>
+                  <p className="text-gray-300 text-sm">
+                    {(selectedProduct.tags?.length || 0) < 3 
+                      ? 'Add more relevant tags to improve discoverability. Aim for 3-5 descriptive tags.'
+                      : 'Consider adding more specific, long-tail keywords to your tags.'
+                    }
+                  </p>
+                </div>
+              )}
+
+              {/* Alt Text Recommendations */}
+              {seoMetrics.altTextCoverage < 100 && selectedProduct.images?.length > 0 && (
+                <div className="bg-gradient-to-r from-green-600/20 to-emerald-600/20 rounded-xl border border-green-400/30 p-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <Eye className="h-5 w-5 text-green-400" />
+                    <h3 className="font-semibold text-green-300">Image Accessibility</h3>
+                  </div>
+                  <p className="text-gray-300 text-sm">
+                    {selectedProduct.images.filter(img => !img.altText || !img.altText.trim()).length} of your images are missing alt text. 
+                    Add descriptive alt text to improve SEO and accessibility.
+                  </p>
+                </div>
+              )}
+
+              {/* Description Recommendations */}
+              {seoMetrics.metaDescription < 75 && (
+                <div className="bg-gradient-to-r from-purple-600/20 to-pink-600/20 rounded-xl border border-purple-400/30 p-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <MessageSquare className="h-5 w-5 text-purple-400" />
+                    <h3 className="font-semibold text-purple-300">Description Optimization</h3>
+                  </div>
+                  <p className="text-gray-300 text-sm">
+                    {(selectedProduct.description?.length || 0) < 120 
+                      ? 'Your description is too short. Expand it to 120-160 characters for better meta description.'
+                      : 'Your description is quite long. Consider creating a shorter, more focused meta description.'
+                    }
+                  </p>
+                </div>
+              )}
+
+              {/* Success Message */}
+              {seoMetrics.score >= 85 && (
+                <div className="bg-gradient-to-r from-green-600/20 to-emerald-600/20 rounded-xl border border-green-400/30 p-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <CheckCircle className="h-5 w-5 text-green-400" />
+                    <h3 className="font-semibold text-green-300">Excellent SEO!</h3>
+                  </div>
+                  <p className="text-gray-300 text-sm">
+                    Your product has great SEO optimization. Keep monitoring and updating your content regularly.
+                  </p>
+                </div>
+              )}
             </div>
           </Card>
         </>
@@ -1052,6 +1265,18 @@ export default function ProductPulsePage() {
               >
                 SEO
               </Button>
+              <Button
+                variant="outline"
+                onClick={() => setActiveView('stores')}
+                className={`px-6 py-2 rounded-xl transition-all duration-300 ${
+                  activeView === 'stores'
+                    ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/25'
+                    : 'bg-transparent text-purple-300 hover:bg-purple-600/20 border-purple-400/30'
+                }`}
+              >
+                <Store className="h-4 w-4 mr-2" />
+                Stores
+              </Button>
             </div>
           </div>
 
@@ -1099,6 +1324,12 @@ export default function ProductPulsePage() {
           {activeView === 'overview' && renderOverview()}
           {activeView === 'details' && renderDetails()}
           {activeView === 'seo' && renderSEOView()}
+          {activeView === 'stores' && (
+            <RealStoreManager 
+              onStoreSelect={setSelectedStoreId}
+              selectedStoreId={selectedStoreId}
+            />
+          )}
 
           {/* Product Selection Modal */}
           {showProductModal && (
@@ -1161,9 +1392,9 @@ export default function ProductPulsePage() {
                       onChange={(e) => setStoreFilter(e.target.value)}
                     >
                       <option value="all">All Stores</option>
-                      {productsData?.stores?.map((store: any) => (
+                      {stores?.map((store: any) => (
                         <option key={store.id} value={store.id}>
-                          {store.name} ({store.platform})
+                          {store.storeName} ({store.provider})
                         </option>
                       ))}
                     </select>
@@ -1176,17 +1407,17 @@ export default function ProductPulsePage() {
                         <Loader2 className="h-12 w-12 animate-spin text-purple-400 mx-auto mb-4" />
                         <p className="text-gray-300">Loading products...</p>
                       </div>
-                    ) : productsData?.products?.length === 0 ? (
+                    ) : allProducts?.length === 0 ? (
                       <div className="text-center py-12">
                         <Package className="h-16 w-16 text-gray-500 mx-auto mb-4" />
                         <p className="text-gray-400 text-lg">No products available</p>
                         <p className="text-gray-500 text-sm mb-4">
-                          {productsData?.stores?.length === 0 
+                          {stores?.length === 0 
                             ? 'No stores connected. Please connect a store first.'
                             : 'No products found in your connected stores.'
                           }
                         </p>
-                        {productsData?.stores?.length === 0 && (
+                        {stores?.length === 0 && (
                           <Button
                             onClick={() => {
                               setShowProductModal(false);
